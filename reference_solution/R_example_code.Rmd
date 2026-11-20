@@ -1,0 +1,121 @@
+---
+title: "Untitled"
+author: "Hao Nguyen"
+date: "2026-07-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(kableExtra)
+library(survival)
+```
+
+## Load the file using the file path
+
+```{r}
+data <- read.csv("C:/Users/anhha/Documents/colon/colon.csv", fileEncoding = "UTF-8")
+data <- data %>%
+    mutate(across(where(is.character), ~na_if(., "")))
+
+kable(data) %>%
+  kable_styling(full_width = FALSE) %>%
+  scroll_box(height = "300px")
+```
+
+## Filter the data with etype==2
+
+```{r}
+filtered_data <- data |> filter(etype ==2)
+```
+
+
+## Calculate the median survival time. -> 2552
+
+```{r}
+Y=Surv(filtered_data$time, filtered_data$status) 
+kmfit=survfit(Y~1)
+print(kmfit, digits = 4)
+```
+
+## Create a graph of KM estimated survival functions
+
+```{r}
+kmfit2=survfit(Y~filtered_data$node4)
+plot(kmfit2, conf.int=T, lty = c('solid', 'dashed'), col=c('red','blue'), xlab='survival time in days',ylab='survival probabilities')
+legend('topright', c('More than 4 positive lymph nodes','Less or equal than 4 positive lymph nodes'), lty=c('solid','dashed'), col=c('red','blue'))
+```
+
+## Use the log-rank test for rx variable.
+
+```{r}
+lr_test <- survdiff(Y ~ rx, data = filtered_data)
+lr_test
+```
+## Use a Cox proportional hazards model to estimate hazard ratios for the effects of rx, age, sex, node4.
+
+```{r}
+mod1 <- coxph(Y ~ rx + sex + node4 + age, data = filtered_data)
+summary(mod1)
+```
+## Harrell's C-statistic
+
+```{r}
+library(survival)
+
+fit <- coxph(Surv(time, status) ~ age + sex + node4 + rx, data = filtered_data)
+
+concordance(fit)
+```
+
+
+
+## Assessing the proportional hazards assumption with a statistical test.
+
+```{r}
+mod1 <- coxph(Y ~ rx + sex + node4 + age, data = filtered_data)
+cox.zph(mod1, terms = FALSE, transform = "rank")
+```
+
+## Plot the survival curves of male patient age of 70, treatment with Lev+5FU, more than 4 lymph nodes
+
+```{r}
+filtered_data$rx_factor = factor(filtered_data$rx)
+mod1 <- coxph(Y ~ rx + sex + node4 + age, data = filtered_data)
+summary(mod1)
+pattern1 <- data.frame(
+  age = 70,
+  sex = 1,
+  rx = "Lev+5FU",
+  node4 = 1
+)
+plot(survfit(mod1,newdata=pattern1),conf.int=F,main='Predicted Survival Function\nMale, Age 70, Lev+5FU, Nodes=2')
+```
+## Last observed survival probability 
+```{r}
+tail(summary(survfit(mod1, newdata=pattern1))$surv, 1)
+```
+
+
+## Extended cox model
+
+```{r}
+filtered_data.cp1095=survSplit(filtered_data,cut=1095, end="time", event="status",start="start",id="new_id")
+filtered_data.cp1095$hv1=filtered_data.cp1095$node4*(filtered_data.cp1095$start<1095)
+filtered_data.cp1095$hv2=filtered_data.cp1095$node4*(filtered_data.cp1095$start>=1095)
+
+Y1095 = Surv(filtered_data.cp1095$start,filtered_data.cp1095$time, filtered_data.cp1095$status)
+
+coxph(Y1095 ~ rx + age + sex + hv1 + hv2 +cluster(id), data=filtered_data.cp1095)
+
+```
+
+
+## AFT model
+
+```{r}
+
+modpar2=survreg(Surv(time, status)  ~ rx_factor + sex + node4 + age ,data=filtered_data,dist="weibull")
+summary(modpar2)
+```
+
